@@ -1,3 +1,8 @@
+// Debe ser el primer import: el paquete "uuid" (usado en offlineStore.ts
+// para generar eventId) necesita crypto.getRandomValues, que no existe en
+// el runtime de Hermes/React Native sin este polyfill.
+import 'react-native-get-random-values';
+
 import { registerRootComponent } from 'expo';
 
 import App from './App';
