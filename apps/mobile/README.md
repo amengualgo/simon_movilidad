@@ -30,7 +30,8 @@ no se reescribió nada de ella, solo se conectó a UI real.
 - **`src/hooks/useDriverSession.ts`** — une captura, turno y sync en un solo
   hook que vive en `App.tsx` y se pasa a las pantallas por props.
 - **`src/hooks/useGpsWatch.ts`** — wrapper de `expo-location`.
-- **`src/lib/localStore.ts`** — implementación en memoria de `LocalStore` (ver gap más abajo).
+- **`src/lib/localStore.ts`** — capa reactiva (`subscribe`/`getSnapshot`) de `LocalStore` sobre un `SqliteDriver`.
+- **`src/lib/sqliteDriver.ts`** — driver real con `expo-sqlite` (única pieza que importa el módulo nativo; ver gap más abajo).
 - **`src/lib/geo.ts`** — Haversine + formato de duración, sin dependencias.
 
 Todo el color/tipografía/espaciado sale de `getTheme()` (`src/theme.ts` →
@@ -38,16 +39,29 @@ Todo el color/tipografía/espaciado sale de `getTheme()` (`src/theme.ts` →
 
 ## Gaps documentados (explícitos, no silenciosos)
 
-1. **`LocalStore` sigue siendo en memoria, no WatermelonDB/expo-sqlite.**
-   `src/lib/localStore.ts` implementa exactamente el contrato que
-   `offlineStore.ts`/`syncWorker.ts` ya esperaban (`insert`/`findPending`/`markSynced`),
-   más una capa de suscripción (`subscribe`/`getSnapshot`) que la UI usa vía
-   `useSyncExternalStore` para reflejar el contador de pendientes sin hacer
-   polling. Conectar WatermelonDB (o `expo-sqlite` como alternativa más
-   simple) requiere pasos de configuración nativa que van más allá de este
-   pase — sustituir `createInMemoryStore()` por el driver real en
-   `useDriverSession.ts` es el único punto de cambio necesario, la lógica de
-   captura/sync no se toca.
+1. **Arquitectura de storage cerrada (`expo-sqlite`), persistencia real en
+   dispositivo sin verificar.** `src/lib/sqliteDriver.ts` implementa
+   `SqliteDriver` contra la API async de `expo-sqlite`
+   (`openDatabaseAsync`/`execAsync`/`runAsync`/`getAllAsync`, confirmada
+   contra los tipos instalados) sobre una tabla `telemetry_events` con las
+   mismas columnas que `LocalTelemetryEvent`. `src/lib/localStore.ts`
+   (`createSqliteStore`) mantiene el mismo contrato `ReactiveLocalStore`
+   (`insert`/`findPending`/`markSynced`/`subscribe`/`getSnapshot`) que ya
+   usaban `offlineStore.ts`/`syncWorker.ts`/`useDriverSession.ts` — ninguno
+   de esos tres se reescribió, solo el archivo de storage. Se descartó
+   WatermelonDB (quedó instalado sin cablear en un pase anterior) porque su
+   adaptador SQLite típicamente requiere `expo prebuild` + linking nativo,
+   no verificable en este entorno; `expo-sqlite` funciona en managed
+   workflow sin ese paso. **Lo que sigue sin verificarse**: que el SQL
+   corra correctamente contra el motor nativo real (iOS/Android) y que los
+   datos persistan entre reinicios de la app — ningún test en este entorno
+   puede probar esto último, es la misma clase de gap que el ítem 2 de
+   abajo (sin Xcode/Android SDK ni dispositivo/emulador disponibles). El
+   listener de `NetInfo` en `useDriverSession.ts` usa `store.findPending()`
+   (autoritativo contra la DB) en vez de `getSnapshot()` para decidir si
+   hay que sincronizar, precisamente para ser correcto aun si la hidratación
+   inicial desde SQLite todavía no terminó cuando el dispositivo ya tenía
+   conectividad al abrir la app.
 2. **Captura GPS real no verificada contra hardware.** `useGpsWatch.ts` usa
    la API documentada de `expo-location` (`requestForegroundPermissionsAsync`
    + `watchPositionAsync`), pero este entorno de generación no tiene
@@ -66,16 +80,24 @@ Todo el color/tipografía/espaciado sale de `getTheme()` (`src/theme.ts` →
 
 - `npm run typecheck` (`tsc --noEmit`) — sin errores, sobre el código real de
   las 5 pantallas + hooks + la lógica offline-sync ya existente.
-- `npm test` — 14/14 tests pasan (`vitest run`), incluyendo los 7 tests
-  originales de `offline-sync.test.ts` (sin tocar) más `geo.test.ts` y
-  `localStore.test.ts`, nuevos.
+- `npm test` — 16/16 tests pasan (`vitest run`): los 7 originales de
+  `offline-sync.test.ts` (sin tocar, nunca importa `localStore.ts`), 4 de
+  `geo.test.ts`, y 5 de `localStore.test.ts` (reescrito contra
+  `createSqliteStore` con un `SqliteDriver` falso inyectado — Vitest corre
+  en Node y no puede importar el módulo nativo `expo-sqlite`, así que se
+  prueba el contrato, no el motor SQLite real; incluye un caso nuevo de
+  hidratación de eventos pendientes de una sesión anterior).
 - `npm run build` (`expo export --platform android`) — **empaqueta con
-  Metro real** (642 módulos resueltos), sin necesitar Android SDK/Xcode ni
-  un dispositivo — esto sí prueba que todo el grafo de imports (incluido el
-  workspace `@fleet/shared` vía symlink de npm workspaces) resuelve y
-  compila correctamente. Es la verificación más fuerte disponible sin
-  hardware real; no reemplaza probar la app corriendo en un
-  dispositivo/emulador.
+  Metro real** (675 módulos resueltos, incluyendo `expo-sqlite` y el nuevo
+  `sqliteDriver.ts`), sin necesitar Android SDK/Xcode ni un dispositivo —
+  esto sí prueba que todo el grafo de imports (incluido el workspace
+  `@fleet/shared` vía symlink de npm workspaces) resuelve y compila
+  correctamente. Es la verificación más fuerte disponible sin hardware
+  real; no reemplaza probar la app corriendo en un dispositivo/emulador, y
+  no ejecuta ni una sola sentencia SQL contra un motor real.
+- **No verificado**: si `expo-sqlite` funciona dentro de Expo Go para SDK
+  57 o si hace falta un dev client custom — confirmar esto antes de asumir
+  que `npm run start` sigue funcionando igual que antes de este cambio.
 
 Durante esta verificación con Metro se descubrió que `offlineStore.ts` y
 `syncWorker.ts` usan imports relativos con extensión `.js` apuntando a
@@ -107,7 +129,8 @@ encargo pedía evaluar, no forzar.
 
 **Decisión:** Vitest se queda para lo que ya prueba bien — lógica pura sin
 importar `react-native` (`offlineStore.ts`, `syncWorker.ts`, `lib/geo.ts`,
-`lib/localStore.ts`, 14 tests en total). Las pantallas/componentes RN
+`lib/localStore.ts` vía un `SqliteDriver` falso inyectado, 16 tests en
+total). Las pantallas/componentes RN
 (`CaptureScreen`, `SyncToast`, etc.) **no tienen test automatizado en este
 pase** — es un gap real, documentado aquí explícitamente en vez de forzar
 `jest-expo` dentro de un monorepo que por convención usa Vitest en todos los
