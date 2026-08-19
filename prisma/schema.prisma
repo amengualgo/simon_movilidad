@@ -1,0 +1,44 @@
+// Persistencia: Postgres plano (no TimescaleDB), indexado por vehicleId + timestamp.
+// Decisión documentada en README.md / PLAN.md — simplificación consciente para el alcance de esta prueba.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model TelemetryEvent {
+  // eventId es generado por el cliente (API sync o app móvil), NUNCA por el servidor.
+  // Es la clave de idempotencia para deduplicar reintentos/reentregas.
+  eventId    String   @id
+  vehicleId  String
+  lat        Float
+  lng        Float
+  speedKmh   Float?
+  zoneId     String?
+  capturedAt DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([vehicleId, capturedAt])
+  @@index([zoneId])
+  @@map("telemetry_events")
+}
+
+// Estado derivado por vehículo, actualizado por el worker en cada evento válido.
+// Es lo que consulta el agente de IA (getStoppedVehicles, etc.) sin escanear el histórico completo.
+model VehicleStatus {
+  vehicleId     String   @id
+  lastLat       Float
+  lastLng       Float
+  zoneId        String?
+  lastMovedAt   DateTime // se actualiza solo cuando el vehículo realmente se mueve
+  stoppedSince  DateTime? // null si está en movimiento
+  updatedAt     DateTime @updatedAt
+
+  @@index([zoneId])
+  @@map("vehicle_status")
+}

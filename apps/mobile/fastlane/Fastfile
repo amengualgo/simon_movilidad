@@ -1,0 +1,37 @@
+# Fastfile — DOCUMENTADO, NO EJECUTADO contra credenciales reales de tienda
+# para esta prueba técnica (ver apps/mobile/README.md). Describe el pipeline
+# de firma/publicación que se usaría en un entorno real, apoyado en EAS
+# (Expo Application Services) para el build nativo, que es el flujo estándar
+# recomendado para un proyecto Expo managed workflow como este — Fastlane
+# orquesta la parte de firma/subida a las tiendas, no reemplaza a EAS build.
+#
+# Credenciales (nunca committeadas, siempre vía secrets de CI):
+#   - iOS: APP_STORE_CONNECT_API_KEY_* (App Store Connect API key)
+#   - Android: ANDROID_KEYSTORE_BASE64 + ANDROID_KEYSTORE_PASSWORD, GOOGLE_PLAY_JSON_KEY
+#   - EXPO_TOKEN (para `eas build` no interactivo)
+
+default_platform(:ios)
+
+platform :ios do
+  desc "Build de la app iOS vía EAS (perfil 'preview', sin publicar)"
+  lane :build do
+    sh("npx eas build --platform ios --profile preview --non-interactive")
+  end
+
+  desc "Sube el build más reciente a TestFlight — requiere App Store Connect API key en CI secrets"
+  lane :beta do
+    sh("npx eas submit --platform ios --latest --non-interactive")
+  end
+end
+
+platform :android do
+  desc "Build de la app Android vía EAS (perfil 'preview', sin publicar)"
+  lane :build do
+    sh("npx eas build --platform android --profile preview --non-interactive")
+  end
+
+  desc "Sube el build más reciente a la pista 'internal' de Google Play — requiere GOOGLE_PLAY_JSON_KEY en CI secrets"
+  lane :beta do
+    sh("npx eas submit --platform android --latest --non-interactive")
+  end
+end

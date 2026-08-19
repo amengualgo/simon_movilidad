@@ -1,0 +1,117 @@
+version: "3.9"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672" # management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: fleet
+      RABBITMQ_DEFAULT_PASS: fleet
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: fleet
+      POSTGRES_PASSWORD: fleet
+      POSTGRES_DB: fleet_telemetry
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fleet -d fleet_telemetry"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://fleet:fleet@postgres:5432/fleet_telemetry
+      RABBITMQ_URL: amqp://fleet:fleet@rabbitmq:5672
+      AI_AGENT_URL: http://ai-agent:3002
+      PORT: 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://fleet:fleet@postgres:5432/fleet_telemetry
+      RABBITMQ_URL: amqp://fleet:fleet@rabbitmq:5672
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Descarga el modelo la primera vez que arranca el contenedor (queda cacheado en el volumen).
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "ollama serve &
+       sleep 5 &&
+       ollama pull qwen2.5:3b &&
+       wait"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ai-agent:
+    build:
+      context: .
+      dockerfile: apps/ai-agent/Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      DATABASE_URL: postgresql://fleet:fleet@postgres:5432/fleet_telemetry
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: qwen2.5:3b
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      PORT: 3002
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:3000
+      VITE_WS_URL: ws://localhost:3000
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  ollama_data:

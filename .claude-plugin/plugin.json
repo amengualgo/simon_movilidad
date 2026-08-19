@@ -1,0 +1,10 @@
+{
+  "name": "fleet-telemetry-simon-movilidad",
+  "description": "Portal Corporativo de Monitoreo de Flotas — prueba técnica Senior Fullstack para Simón Movilidad. Fastify + RabbitMQ async ingestion, Postgres persistence, circuit-breaker resilience, an isolated AI tool-use agent (Ollama/OpenAI-swappable), a WebSocket-driven React dashboard, and an offline-first React Native driver app.",
+  "version": "1.0.0",
+  "author": {
+    "name": "amengualgo"
+  },
+  "keywords": ["fastify", "typescript", "react", "react-native", "prisma", "rabbitmq", "circuit-breaker", "ai-agent", "websockets", "offline-first", "monorepo", "turborepo", "node", "fleet-telemetry", "simon-movilidad"],
+  "license": "Apache-2.0"
+}

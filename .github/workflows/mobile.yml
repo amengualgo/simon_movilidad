@@ -1,0 +1,39 @@
+name: Mobile CI
+
+on:
+  push:
+    paths: ["apps/mobile/**"]
+  pull_request:
+    paths: ["apps/mobile/**"]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install
+
+      # No hay ESLint configurado a nivel de monorepo todavía (gap
+      # documentado, fuera del alcance de este paquete) — "typecheck" es el
+      # stand-in explícito de "lint" para esta app hasta que se añada.
+      - run: npm run typecheck
+
+      - run: npm test --if-present
+
+      # "build" empaqueta con Metro (expo export) sin necesitar
+      # Xcode/Android SDK ni un dispositivo — valida que todo el grafo de
+      # imports (incluido el workspace @fleet/shared) resuelve y compila.
+      - run: npm run build
+
+      # Fastlane: documentado, no ejecutado contra credenciales reales de
+      # tienda para esta prueba. Ver apps/mobile/README.md.
+      # - uses: ruby/setup-ruby@v1
+      # - run: bundle exec fastlane build

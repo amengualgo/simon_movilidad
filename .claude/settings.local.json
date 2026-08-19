@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm:*)",
+      "Bash(npx turbo:*)",
+      "Bash(node:*)",
+      "Bash(ls:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(grep -E \"\\\\.ts$|\\\\.tsx$|\\\\.json$|src/\")",
+      "Bash(docker compose up:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker compose down:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}

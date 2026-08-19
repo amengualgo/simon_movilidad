@@ -1,0 +1,6 @@
+# Documentado, no ejecutado — ver Fastfile. Estos valores se completarían
+# con los identificadores reales de app/equipo antes de publicar contra una
+# cuenta de desarrollador real (App Store Connect / Google Play Console).
+app_identifier("com.fleet.conductor") # ver app.json -> expo.android.package / expo.ios.bundleIdentifier
+apple_id(ENV["FASTLANE_APPLE_ID"])
+itc_team_id(ENV["FASTLANE_ITC_TEAM_ID"])

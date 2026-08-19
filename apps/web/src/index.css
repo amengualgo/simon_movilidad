@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Variables CSS generadas a partir de packages/shared/src/theme.ts.
+ * ÚNICA fuente de verdad de color — si cambias un valor, cámbialo primero
+ * en theme.ts y refleja el mismo valor aquí (Tailwind carga su config vía
+ * Node, no puede importar TS del workspace directamente sin build step
+ * adicional; se documenta como limitación consciente, ver README).
+ *
+ * Formato "R G B" (sin comas) porque Tailwind las usa como
+ * rgb(var(--color-x) / <alpha-value>) para soportar opacidad.
+ */
+:root {
+  /* light (default) */
+  --color-bg: 247 248 250;
+  --color-surface: 255 255 255;
+  --color-surface-raised: 240 242 245;
+  --color-border: 226 230 234;
+  --color-text-primary: 18 24 31;
+  --color-text-secondary: 91 103 115;
+  --color-text-muted: 139 152 165;
+  --color-moving: 15 148 136;
+  --color-moving-subtle: 221 245 241;
+  --color-stopped: 180 83 9;
+  --color-stopped-subtle: 253 240 221;
+  --color-critical: 220 38 38;
+  --color-critical-subtle: 252 232 232;
+  --color-info: 37 99 235;
+  --color-info-subtle: 227 237 252;
+}
+
+.dark {
+  --color-bg: 11 15 20;
+  --color-surface: 18 24 31;
+  --color-surface-raised: 26 34 43;
+  --color-border: 35 45 56;
+  --color-text-primary: 230 234 239;
+  --color-text-secondary: 139 152 165;
+  --color-text-muted: 91 103 115;
+  --color-moving: 45 212 191;
+  --color-moving-subtle: 15 61 56;
+  --color-stopped: 245 165 36;
+  --color-stopped-subtle: 74 53 16;
+  --color-critical: 239 68 68;
+  --color-critical-subtle: 61 20 20;
+  --color-info: 96 165 250;
+  --color-info-subtle: 19 42 74;
+}
+
+body {
+  font-family: theme("fontFamily.body");
+}
+
+/* Elemento de firma: el "pulso" de vehículo en movimiento / alerta crítica. */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}

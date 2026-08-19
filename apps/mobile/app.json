@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Fleet Conductor",
+    "slug": "fleet-mobile",
+    "version": "1.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.fleet.conductor",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Fleet Conductor necesita tu ubicación para registrar tu turno de manejo, incluso sin conexión.",
+        "UIBackgroundModes": ["location"]
+      }
+    },
+    "android": {
+      "package": "com.fleet.conductor",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Fleet Conductor necesita tu ubicación para registrar tu turno de manejo, incluso sin conexión."
+        }
+      ]
+    ]
+  }
+}

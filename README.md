@@ -1,0 +1,122 @@
+# Portal Corporativo de Monitoreo de Flotas — Simón Movilidad (Prueba Técnica Senior Fullstack)
+
+Repositorio del proyecto: pipeline de ingesta de telemetría vía Fastify + RabbitMQ, persistencia en Postgres, agente de consultas de IA protegido por circuit breaker, dashboard React con actualizaciones en vivo por WebSocket, y app de conductor React Native offline-first.
+
+Este proyecto nació a partir de una capa de configuración de Claude Code adaptada de `template_typescript_fastify` (sustituyendo BullMQ por RabbitMQ y añadiendo agentes/skills propios para el agente de IA, el circuit breaker, el broadcast de WebSocket y la sincronización offline móvil). Ver `PLAN.md` en la raíz del repo para el alcance completo, la priorización, y las decisiones de arquitectura ya cerradas.
+
+Para retomar el desarrollo con Claude Code: clona este repositorio y dale el primer prompt sugerido más abajo en este README.
+
+```shell
+.
+├── .claude
+│   ├── agents
+│   │   ├── ai-agent-engineer.md
+│   │   ├── code-reviewer.md
+│   │   ├── devops-engineer.md
+│   │   ├── docker-expert.md
+│   │   ├── fastify-engineer.md
+│   │   ├── mobile-engineer.md
+│   │   ├── react-engineer.md
+│   │   └── security-engineer.md
+│   ├── settings.local.json
+│   └── skills
+│       ├── README.md
+│       ├── ai-agent-patterns
+│       │   └── SKILL.md
+│       ├── circuit-breaker-patterns
+│       │   └── SKILL.md
+│       ├── code-quality
+│       │   └── SKILL.md
+│       ├── design-patterns
+│       │   └── SKILL.md
+│       ├── fastify
+│       │   ├── SKILL.md
+│       │   └── references
+│       │       ├── data.md
+│       │       ├── security.md
+│       │       ├── testing.md
+│       │       └── web.md
+│       ├── logging-patterns
+│       │   └── SKILL.md
+│       ├── mobile-offline-sync
+│       │   └── SKILL.md
+│       ├── prisma-patterns
+│       │   └── SKILL.md
+│       ├── rabbitmq-patterns
+│       │   └── SKILL.md
+│       ├── react-dashboard
+│       │   └── SKILL.md
+│       └── websocket-patterns
+│           └── SKILL.md
+├── .claude-plugin
+│   └── plugin.json
+├── CLAUDE.md
+├── LICENSE
+├── README.md
+└── package.json
+```
+
+## Stack
+
+- **Monorepo**: npm workspaces + Turborepo, TypeScript, Node >=20
+- **Backend API** (`apps/api`): Fastify 5, validación con Zod, Prisma ORM (PostgreSQL — no TimescaleDB, simplificación documentada), RabbitMQ (amqplib) para ingesta asíncrona, circuit breaker con opossum hacia el servicio de agente de IA, @fastify/websocket para broadcast en vivo, @fastify/jwt + @fastify/cors + @fastify/helmet + @fastify/rate-limit
+- **Worker de ingesta** (`apps/worker`): consume `telemetry.raw`, ejecuta la validación completa, persiste de forma idempotente, hace broadcast por WebSocket, envía a dead-letter los mensajes inválidos
+- **Servicio de agente de IA** (`apps/ai-agent`): servicio aislado y mínimo de tool-use — function calling contra consultas de telemetría tipadas y de solo lectura, corriendo en **Ollama local (Qwen2.5) — sin necesidad de API key**. Deliberadamente no es una reutilización de ninguna plataforma de agentes multi-tenant más grande.
+- **Dashboard** (`apps/web`): React 18 + Vite, mapa real en vivo (`react-leaflet` + tiles OpenStreetMap, no un placeholder de lista ni una imagen estática) + panel de alertas + chat de IA vía WebSocket, drawer de detalle de vehículo (DW-04), TanStack Query v5 para datos vía REST, Tailwind CSS con clases semánticas del theme, tema claro/oscuro vía `ThemeProvider` + variables CSS (ver `apps/web/src/index.css`)
+- **App de conductor** (`apps/mobile`): React Native (Expo SDK 57), captura offline-first, sincronización por lotes idempotente al reconectar, CI/CD con Fastlane + GitHub Actions. 5 pantallas de conductor implementadas (DM-01 a DM-05); el almacenamiento local sigue siendo un placeholder en memoria, todavía no WatermelonDB/expo-sqlite — gap documentado, ver `apps/mobile/README.md`
+- **Pruebas de carga/caos**: script de k6 que simula ~300 vehículos con 10% de payloads duplicados y 5% de payloads malformados
+- **Infra**: Docker Compose (RabbitMQ, Postgres, api, worker, ai-agent, web); Terraform/CDK como IaC de referencia documentada
+- **Testing**: Vitest (tests unitarios + tests de integración con `fastify.inject()`, React Testing Library para componentes)
+- **CI**: GitHub Actions
+
+Este template deliberadamente no genera código fuente de aplicación — solo provee la capa de configuración de Claude Code (agentes, skills, settings, instrucciones de proyecto) más una identidad mínima de `package.json`, la misma convención que los demás templates de este repositorio. El código fuente real de `apps/*`/`packages/*` lo genera Claude usando las skills de arriba una vez que empiezas a construir, siguiendo las decisiones ya cerradas en `PLAN.md`.
+
+## Estado real de este proyecto (actualizado)
+- `packages/shared/src/theme.ts`: **sistema de diseño único** (tokens de color modo claro/oscuro, tipografía, radios, espaciado) — dashboard y app móvil consumen los mismos valores, no colores sueltos por pantalla. Ver `USER_STORIES.md` para el catálogo de pantallas a diseñar/mockear, referenciando estos tokens.
+- `packages/shared`: schemas Zod (`rawTelemetrySchema`, `validatedTelemetrySchema`) y contrato de mensajes WebSocket, compartidos entre todos los servicios.
+- `apps/api`: ruta `POST /telemetry` (202 inmediato, publica a RabbitMQ), `POST /telemetry/batch` (usado por la app móvil), `POST /chat` (envuelto en circuit breaker hacia `ai-agent`, con rate limit propio de 20 req/min — ver nota abajo), `GET /vehicles/:vehicleId/history` (historial de posiciones + distancia recorrida, alimenta el drawer de detalle DW-04), `GET /ws/fleet` (WebSocket), health check.
+- `apps/worker`: consumidor de `telemetry.raw`, validación de negocio completa, persistencia idempotente (upsert por `eventId`), actualización de `VehicleStatus`, publicación al exchange fanout de broadcast, dead-lettering de payloads inválidos.
+- `apps/ai-agent`: servicio aislado con 2 tools (`getStoppedVehicles`, `getVehiclesByZone`), bucle de tool-use de un turno detrás de una interfaz `LLMProvider` (patrón Strategy) — por defecto **Ollama local (Qwen2.5:7b, sin API key)**, intercambiable a **OpenAI (de pago)** cambiando `LLM_PROVIDER=openai` + `OPENAI_API_KEY` en `.env`. Ver `apps/ai-agent/src/providers/`.
+- `apps/web`: dashboard React implementado a partir de los mockups importados de Claude Design (`Mockups Portal Flotas.dc.html`) — `useFleetSocket` (reconexión con backoff), `FleetMap` (mapa real con `react-leaflet`, marcadores con anillo de "pulso" solo en `moving`/`critical`, leyenda), `VehicleDetailDrawer` (DW-04: stats, mini-mapa de recorrido real, tabla de posiciones, alertas del vehículo — antes no implementado), `AlertsPanel`, `ChatPanel` (con estado "degradado" visible cuando el circuit breaker hacia `ai-agent` cae al fallback), header con contadores de flota en vivo y toggle de tema, oscuro por defecto.
+- `apps/mobile`: proyecto Expo (TypeScript, SDK 57) ya inicializado, con las 5 pantallas del conductor implementadas (DM-01 a DM-05: captura + estado offline, toast de sync, inicio/fin de turno, resumen de jornada) sobre la lógica core ya existente (`offlineStore.ts`, `syncWorker.ts`, sin reescribir). Verificado con `tsc --noEmit`, `vitest` y un bundle real de Metro (`expo export`) — sin dispositivo/emulador disponible en este entorno, así que la captura de GPS real contra hardware sigue sin verificar end-to-end. Ver `apps/mobile/README.md` para el detalle completo de qué se verificó y qué gaps quedan documentados (storage en memoria en vez de WatermelonDB/expo-sqlite; sin tests automatizados de componentes RN, con la causa exacta explicada).
+- `prisma/schema.prisma`: modelos `TelemetryEvent` y `VehicleStatus`.
+- `docker-compose.yml` + `Dockerfile` por servicio: levanta RabbitMQ, Postgres, api, worker, ai-agent, web con un solo `docker compose up`.
+- `k6/load-test.js`: simula ~300 vehículos, 10% duplicados, 5% payloads inválidos. Correrlo (sin instalar k6, usando Docker): `docker run --rm -i --network host -v "$(pwd)/k6:/k6" grafana/k6 run --env API_URL=http://localhost:3000 /k6/load-test.js`. Este load test destapó un bug real: `@fastify/rate-limit` estaba registrado global (100 req/min por IP) y tumbaba con `429` el 99% de la ingesta — contradice la decisión de arquitectura de ingesta asíncrona de alto volumen. Corregido: el plugin ahora es `global: false`, y solo `/chat` activa un límite propio (20 req/min, protege al agente de IA); `/telemetry` queda sin límite artificial — el backpressure real es RabbitMQ + prefetch del worker.
+- `.github/workflows/ci.yml` y `mobile.yml`.
+- `infra/terraform/main.tf`: referencia de IaC, no desplegada (documentado explícitamente).
+- `tasks/ai-audit-notes.md`: 11 casos de auditoría de IA documentados (incluye la decisión de reemplazar el mapa-imagen-estática del propio mockup por un mapa real con `react-leaflet`, el rate limit global que tumbaba el 99% de la ingesta bajo carga real, y el timeout del circuit breaker copiado del ejemplo genérico de la skill sin ajustar a la latencia real de inferencia local).
+- **Tests (Vitest, positivos y negativos, trazables a `USER_STORIES.md`)**: `packages/shared` (validación de schemas), `apps/worker` (idempotencia de persistencia — DW-01/DM-02/DM-03), `apps/api` (rutas de ingesta, chat, historial de vehículo, y el circuit breaker aislado — DW-01/DW-03/DW-04/DW-06), `apps/ai-agent` (tools de consulta y factory de proveedores), `apps/web` (`App`, `FleetMap`, `AlertsPanel`, `ChatPanel`, `VehicleDetailDrawer`, `ThemeToggle` — DW-01 a DW-06), `apps/mobile` (sync offline idempotente — DM-01/DM-02/DM-03 — más `geo.ts`/`localStore.ts`, lógica pura sin `react-native`; las pantallas RN en sí no tienen test automatizado, ver `apps/mobile/README.md`). Cada `describe`/`it` referencia el ID de HU que cubre en su comentario. Suite completa verificada de punta a punta con `npm run test` en los 6 workspaces (81 tests) más `tsc`/`vite build`/`expo export` en cada app con build propio — no solo reportado por cada agente de forma aislada.
+
+### Qué falta
+- `cp .env.example .env` en la raíz (no requiere ninguna key — usa Ollama local).
+- `docker compose up` para levantar todo (el primer arranque tarda más de lo normal: el servicio `ollama` descarga el modelo `qwen2.5:7b`, ~4.7GB — requiere al menos 8GB de RAM libre para correrlo cómodamente; si la máquina es más limitada, cambiar a `qwen2.5:3b` en `docker-compose.yml` y en `apps/ai-agent/.env.example`).
+- ~~`npx prisma migrate dev` manual para crear las tablas~~ — automatizado: el `CMD` de `api`/`worker`/`ai-agent` corre `prisma migrate deploy` antes de arrancar, así que cualquier `docker compose up` en limpio aplica las migraciones solo, sin paso manual. Sigue haciendo falta generar la migración inicial una sola vez (`prisma migrate dev --name init`, ya comiteada en `prisma/migrations/`) — eso es autoría de schema, no algo que `migrate deploy` pueda hacer por sí solo.
+- ~~Sustituir `FleetMap` por un mapa real~~ — hecho (`react-leaflet`, ver arriba).
+- ~~Inicializar el proyecto Expo real en `apps/mobile`~~ — hecho (ver `apps/mobile/README.md`). Queda pendiente cablear el `LocalStore` en memoria al storage nativo elegido (WatermelonDB o `expo-sqlite`) y verificar la captura de GPS contra un dispositivo/emulador real.
+- ~~Diseñar/mockear el detalle de vehículo del dashboard (DW-04)~~ — hecho: mockups importados de Claude Design e implementados como `VehicleDetailDrawer` + `GET /vehicles/:id/history`. El "conductor asignado" que muestra el drawer (nombre, avatar, horario de turno) es un dato **mock** — todavía no existe un modelo `Driver`/`Vehicle` en el schema de Prisma que lo respalde; el botón "Contactar" es solo visual, no dispara ninguna acción real. Documentado también en el propio componente.
+- Grabar el video de sustentación.
+- Datos de catálogo reales (placa/unidad/modelo/año de vehículo, conductor asignado) — hoy solo existe `VehicleStatus`/`TelemetryEvent` (posición + estado derivado); un modelo `Vehicle`/`Driver` es la extensión natural cuando el alcance lo requiera.
+
+### Verificación final de esta sesión (mockups → código)
+Al correr `npm run test` de punta a punta en los 6 workspaces por primera vez (no solo por paquete, como venían verificando los subagentes en paralelo), aparecieron 4 bugs reales preexistentes, no introducidos por esta sesión, que bloqueaban `apps/api`/`apps/worker`:
+- `apps/api/src/lib/rabbitmq.ts` creaba el canal con `createChannel()` y llamaba `confirmSelect()` manualmente — ese método no existe en el tipo `Channel` de `amqplib`, solo en `ConfirmChannel`. Corregido usando `connection.createConfirmChannel()` directamente (el canal ya nace en modo publisher-confirms).
+- `apps/api/src/lib/ws-broadcast.ts` no tenía `@types/ws` instalado (dependencia transitiva de `@fastify/websocket`, nunca declarada explícitamente) — instalado como devDependency.
+- `apps/api/src/routes/ws.ts` leía `connection.socket`, API del plugin `@fastify/websocket` v8/v9; la v11 ya instalada (`^11.0.0`) pasa el `WebSocket` crudo directo como primer argumento — corregido para usar `connection` sin `.socket`.
+- El mock de Prisma en `apps/worker/src/__tests__/persist.test.ts` no simulaba el `updatedAt` automático de Prisma (columna `@updatedAt`), así que `persistTelemetryEvent` fallaba en el mock con `updatedAt` `undefined` — un error que no existe contra una Postgres real. Corregido en el mock, no en `persist.ts` (que ya era correcto).
+
+Con estos 4 fixes, `npm run test` pasa limpio en los 6 workspaces (81 tests) y cada app compila/buildea (`tsc`, `vite build`, `expo export`).
+
+### Bugs reales encontrados corriendo el stack completo bajo carga (post-mockups)
+Verificar contra Docker real (no solo `npm run test`) destapó 3 bugs que ningún test unitario cubría:
+- **Rate limit global tumbando la ingesta**: `@fastify/rate-limit` estaba registrado sobre toda la API (100 req/min por IP) — bajo `k6/load-test.js` real, el 99.3% de `POST /telemetry` volvía `429`. Corregido a `global: false` + límite propio solo en `/chat` (20 req/min, protege al agente de IA). Ver Caso 10 en `tasks/ai-audit-notes.md`.
+- **Migraciones de Prisma nunca generadas**: `prisma/migrations/` no existía — el worker fallaba con `relation "telemetry_events" does not exist`. Se generó la migración inicial (`prisma migrate dev --name init`, ya comiteada) y se automatizó `prisma migrate deploy` en el `CMD` de `api`/`worker`/`ai-agent`, así que ningún entorno nuevo requiere pasos manuales.
+- **Chat de IA siempre en fallback ("Agente no disponible"), causa 1 — mismatch de modelo**: `docker-compose.yml` le pedía a `ai-agent` el modelo `OLLAMA_MODEL: qwen2.5:7b`, pero el servicio `ollama` solo descarga `qwen2.5:3b` en su arranque — mismatch entre las dos líneas del propio compose (el `.env.example` de `ai-agent` sí tenía el valor correcto, `3b`). Cada consulta fallaba con `model 'qwen2.5:7b' not found`. Corregido alineando `OLLAMA_MODEL` a `qwen2.5:3b` en `docker-compose.yml`.
+- **Chat de IA siempre en fallback, causa 2 — timeout del circuit breaker demasiado corto para inferencia local**: con el mismatch de arriba ya corregido, el chat seguía cayendo al fallback. Medido contra `ollama` real: una sola llamada de `qwen2.5:3b` en CPU (sin GPU) tardó **62.5s**, y `agent.ts` hace 2 llamadas secuenciales al LLM por consulta (decidir tool + sintetizar respuesta). El circuit breaker en `apps/api/src/lib/circuit-breaker.ts` tenía `timeout: 5000` — el valor de ejemplo tal cual de la skill `circuit-breaker-patterns` (pensado para una llamada HTTP normal a un servicio en la nube), copiado sin ajustar pese a que la propia skill `ai-agent-patterns` advierte explícitamente no hacerlo. Corregido subiendo el timeout a 120s. Ver Caso 11 en `tasks/ai-audit-notes.md`.
+- **Crash del drawer de detalle de vehículo (DW-04)**: `VehicleDetailDrawer.tsx` pasaba `icon={isCritical ? pulsingDivIcon() : undefined}` al `<Marker>` de react-leaflet — a diferencia de un `<img>` HTML, react-leaflet **no** cae al ícono por defecto cuando `icon` llega `undefined`, sobrescribe la opción y crashea en `_initIcon` (pantalla en blanco, sin error boundary). Reproducible en casi cualquier vehículo no crítico. Corregido con un `plainDivIcon()` explícito para el caso no crítico (mismo patrón que ya usaba `FleetMap.tsx`, que nunca tuvo este bug). El mock de `react-leaflet` en `VehicleDetailDrawer.test.tsx` ahora lanza si `icon` llega `undefined`, para que una regresión de este tipo rompa el test en vez de pasar silenciosamente.
+
+### Nota sobre el sistema de diseño y su limitación conocida
+Los tokens de color/tipografía viven en un único lugar (`packages/shared/src/theme.ts`), pero Tailwind carga su config vía Node sin transpilar TS del workspace automáticamente — por eso `apps/web/src/index.css` tiene los mismos valores "hardcodeados" como variables CSS, generados manualmente a partir de `theme.ts`. Si cambias un color, cámbialo primero en `theme.ts` y refleja el mismo valor en `index.css` — está comentado explícitamente en ambos archivos. Esto es una limitación de tooling documentada, no un descuido; si el tiempo alcanza, se podría automatizar con un pequeño script de build que genere `index.css` desde `theme.ts`.
+
+### Primer prompt sugerido para Claude Code al llegar a casa
+> "Lee CLAUDE.md, PLAN.md y el README de cada apps/*. Instala dependencias, levanta docker-compose, corre las migraciones de Prisma, y verifica que POST /telemetry → worker → Postgres → WebSocket → dashboard funciona de punta a punta con un evento de prueba. Reporta qué falla antes de seguir construyendo."
+
