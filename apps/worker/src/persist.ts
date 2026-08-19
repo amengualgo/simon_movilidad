@@ -28,7 +28,15 @@ export async function persistTelemetryEvent(
       zoneId: event.zoneId,
       capturedAt: new Date(event.capturedAt),
     },
-    update: {}, // ya existe: no-op, es una reentrega
+    // "ya existe: no-op, es una reentrega" — pero un `update: {}` vacío hace
+    // que Prisma no genere la cláusula ON CONFLICT DO UPDATE real (cae a un
+    // INSERT plano sin protección de conflicto), así que una reentrega del
+    // mismo eventId termina lanzando P2002 (unique constraint) en vez de
+    // absorberse en silencio, confirmado en producción con el driver
+    // idempotente de apps/mobile. Reasignar eventId a sí mismo fuerza un
+    // ON CONFLICT DO UPDATE real (no cambia ningún dato) sin perder la
+    // semántica de no-op.
+    update: { eventId: event.eventId },
   });
 
   const previous = await prisma.vehicleStatus.findUnique({ where: { vehicleId: event.vehicleId } });
