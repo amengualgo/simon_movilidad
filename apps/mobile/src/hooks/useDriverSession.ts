@@ -2,12 +2,16 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import NetInfo from "@react-native-community/netinfo";
 import { captureLocation, SYNC_STATUS } from "../offlineStore.js";
 import { syncPendingEvents } from "../syncWorker.js";
-import { createInMemoryStore } from "../lib/localStore.js";
+import { createSqliteStore } from "../lib/localStore.js";
+import { createExpoSqliteDriver } from "../lib/sqliteDriver.js";
 import { distanceKm } from "../lib/geo.js";
 import { useGpsWatch, type MovementState } from "./useGpsWatch.js";
 
 const VEHICLE_ID = "v-demo-conductor-01";
 const ROUTE_NAME = "Ruta Norte 12";
+// Respaldo del trigger por conectividad — ver el useEffect del intervalo de
+// sync más abajo para la explicación completa de por qué hace falta.
+const SYNC_FALLBACK_INTERVAL_MS = 3 * 60_000;
 
 export interface ShiftSummary {
   durationMs: number;
@@ -23,13 +27,12 @@ export interface ShiftSummary {
  * pantallas por props — no hay navegación ni contexto global, ver README.md
  * ("por qué no react-navigation").
  *
- * GAP DOCUMENTADO: el `LocalStore` usado aquí es la implementación en
- * memoria de `src/lib/localStore.ts`, no WatermelonDB/expo-sqlite todavía —
- * el contrato (`insert`/`findPending`/`markSynced`) es idéntico, así que
- * conectar el driver real más adelante no debería tocar este hook.
+ * El `LocalStore` real vive en `src/lib/sqliteDriver.ts` (expo-sqlite) +
+ * `src/lib/localStore.ts` (capa reactiva síncrona para la UI sobre ese
+ * driver async) — este hook solo conoce el contrato `LocalStore`.
  */
 export function useDriverSession() {
-  const store = useRef(createInMemoryStore()).current;
+  const store = useRef(createSqliteStore(createExpoSqliteDriver())).current;
   const events = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const pendingCount = events.filter((e) => e.status !== SYNC_STATUS.SYNCED).length;
 
@@ -51,24 +54,47 @@ export function useDriverSession() {
     return () => clearInterval(id);
   }, []);
 
-  // Disparado por el listener de conectividad de NetInfo, nunca por polling
-  // — ver skill `mobile-offline-sync`. NetInfo entrega el estado actual
-  // inmediatamente al suscribirse, así que también cubre "ya había red al
-  // abrir la app" sin código extra.
+  // findPending() (autoritativo contra la DB) en vez de getSnapshot() (cache
+  // síncrona) — con hidratación async, si ya había conectividad al abrir la
+  // app el trigger puede dispararse antes de que la cache se hidrate, y
+  // getSnapshot() leería [] salteándose el sync de eventos pendientes de una
+  // sesión anterior.
+  const attemptSync = useCallback(() => {
+    store.findPending().then((pendingBefore) => {
+      if (pendingBefore.length === 0) return;
+      syncPendingEvents(store).then(() => {
+        store.findPending().then((pendingAfter) => {
+          if (pendingAfter.length < pendingBefore.length) setLastSyncAt(Date.now());
+        });
+      });
+    });
+  }, [store]);
+
+  // Trigger primario: listener de conectividad de NetInfo — ver skill
+  // `mobile-offline-sync`. NetInfo entrega el estado actual inmediatamente
+  // al suscribirse, así que también cubre "ya había red al abrir la app"
+  // sin código extra.
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
       const online = Boolean(state.isConnected);
       setIsOnline(online);
-      if (!online) return;
-      const pendingBefore = store.getSnapshot().filter((e) => e.status !== SYNC_STATUS.SYNCED).length;
-      if (pendingBefore === 0) return;
-      syncPendingEvents(store).then(() => {
-        const pendingAfter = store.getSnapshot().filter((e) => e.status !== SYNC_STATUS.SYNCED).length;
-        if (pendingAfter < pendingBefore) setLastSyncAt(Date.now());
-      });
+      if (online) attemptSync();
     });
     return unsubscribe;
-  }, [store]);
+  }, [attemptSync]);
+
+  // Respaldo del trigger de arriba: si la conectividad se mantiene estable
+  // (WiFi sin cortes, sin cambiar de red) NetInfo nunca dispara un evento de
+  // "cambio" y el sync nunca se reintenta — confirmado en dispositivo real,
+  // la cola de pendientes crecía sin bajar nunca con WiFi estable. Reintenta
+  // cada SYNC_FALLBACK_INTERVAL_MS mientras haya conexión, sin reemplazar
+  // el trigger reactivo (que sigue siendo el camino rápido/primario ante un
+  // cambio real de conectividad).
+  useEffect(() => {
+    if (!isOnline) return;
+    const id = setInterval(attemptSync, SYNC_FALLBACK_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [isOnline, attemptSync]);
 
   useGpsWatch(shiftActive, (fix) => {
     setMovement(fix.movement);

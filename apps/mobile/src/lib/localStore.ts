@@ -1,13 +1,12 @@
 import { SYNC_STATUS, type LocalStore, type LocalTelemetryEvent } from "../offlineStore.js";
+import type { SqliteDriver } from "./sqliteDriver.js";
 
 /**
- * Implementación EN MEMORIA de `LocalStore`, usada mientras no se conecte un
- * driver de storage real (WatermelonDB o `expo-sqlite`) — ver README.md de
- * esta carpeta, sección "Gaps documentados". Implementa exactamente el mismo
- * contrato que `offlineStore.ts`/`syncWorker.ts` ya esperan (insert /
- * findPending / markSynced), así que sustituirla por un adaptador real más
- * adelante no debería tocar ni la lógica de captura ni la de sync, solo este
- * archivo.
+ * Capa reactiva sobre `LocalStore`, respaldada por un `SqliteDriver` real
+ * (ver `sqliteDriver.ts`, la única pieza que toca expo-sqlite). Implementa
+ * exactamente el mismo contrato que `offlineStore.ts`/`syncWorker.ts` ya
+ * esperan (insert / findPending / markSynced), así que la lógica de captura
+ * y de sync no se toca al cambiar de driver.
  *
  * Añade una capa mínima de pub/sub (`subscribe`) para que la UI pueda
  * reaccionar a cambios (contador de pendientes, toast de sync) sin hacer
@@ -21,29 +20,51 @@ export interface ReactiveLocalStore extends LocalStore {
   subscribe(listener: () => void): () => void;
 }
 
-export function createInMemoryStore(): ReactiveLocalStore {
-  let events: LocalTelemetryEvent[] = [];
+/**
+ * El driver de expo-sqlite es async (abrir la DB, correr SQL), pero
+ * `getSnapshot`/`subscribe` deben seguir siendo síncronos para cumplir el
+ * contrato de `useSyncExternalStore`. Se mantiene una cache en memoria,
+ * hidratada una vez desde la DB al construirse (`ready`), que cada método
+ * espera antes de leer/escribir. `findPending` consulta el driver
+ * directamente (autoritativo) en vez de derivar de la cache, para ser
+ * correcto incluso si se llama antes de que termine la hidratación.
+ */
+export function createSqliteStore(driver: SqliteDriver): ReactiveLocalStore {
+  let cache: LocalTelemetryEvent[] = [];
   const listeners = new Set<() => void>();
   const notify = () => listeners.forEach((listener) => listener());
 
+  const ready = (async () => {
+    await driver.init();
+    cache = await driver.findAll();
+    // Solo notifica si hidrató filas preexistentes (ej. eventos pendientes
+    // de una sesión anterior) — en una DB vacía no hay nada nuevo que avisar.
+    if (cache.length > 0) notify();
+  })();
+
   return {
     getSnapshot() {
-      return events;
+      return cache;
     },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     async insert(event) {
-      events = [...events, event];
+      await ready;
+      await driver.insert(event);
+      cache = [...cache, event];
       notify();
     },
     async findPending() {
-      return events.filter((e) => e.status === SYNC_STATUS.PENDING);
+      await ready;
+      return driver.findPending();
     },
     async markSynced(eventIds) {
+      await ready;
+      await driver.markSynced(eventIds);
       const idSet = new Set(eventIds);
-      events = events.map((e) => (idSet.has(e.eventId) ? { ...e, status: SYNC_STATUS.SYNCED } : e));
+      cache = cache.map((e) => (idSet.has(e.eventId) ? { ...e, status: SYNC_STATUS.SYNCED } : e));
       notify();
     },
   };

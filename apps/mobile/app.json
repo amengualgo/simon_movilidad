@@ -11,7 +11,9 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Fleet Conductor necesita tu ubicación para registrar tu turno de manejo, incluso sin conexión.",
-        "UIBackgroundModes": ["location"]
+        "UIBackgroundModes": [
+          "location"
+        ]
       }
     },
     "android": {
@@ -23,7 +25,10 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -34,7 +39,8 @@
         {
           "locationWhenInUsePermission": "Fleet Conductor necesita tu ubicación para registrar tu turno de manejo, incluso sin conexión."
         }
-      ]
+      ],
+      "expo-sqlite"
     ]
   }
 }

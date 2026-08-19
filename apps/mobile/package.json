@@ -1,13 +1,13 @@
 {
   "name": "@fleet/mobile",
-  "version": "1.0.1",
+  "version": "1.0.10",
   "private": true,
   "description": "App del conductor (React Native/Expo, offline-first). Ver README.md para el estado del scaffold y las brechas documentadas.",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "build": "expo export --platform android",
     "typecheck": "tsc --noEmit",
@@ -15,17 +15,20 @@
   },
   "dependencies": {
     "@fleet/shared": "*",
-    "@nozbe/watermelondb": "^0.25.5",
     "@react-native-community/netinfo": "^11.4.1",
     "expo": "~57.0.14",
     "expo-location": "~57.0.11",
+    "expo-sqlite": "~57.0.1",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-native": "0.86.2",
+    "react-native-get-random-values": "^1.11.0",
+    "react-native-safe-area-context": "~5.7.0",
     "uuid": "^14.0.2"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "react-is": "^17.0.2",
     "typescript": "^5.6.0",
     "vitest": "^3.2.6"
   }
