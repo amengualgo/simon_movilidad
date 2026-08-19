@@ -5,11 +5,17 @@ import type { Theme } from "../theme.js";
 const CONFIRMATION_VISIBLE_MS = 3000;
 
 /**
- * DM-03 — banner de sync superpuesto. Se alimenta del `pendingCount` real
- * de `offlineStore`/`syncWorker` (vía `useDriverSession`), nunca de un mock
+ * DM-03 — banner de sync. Se alimenta del `pendingCount` real de
+ * `offlineStore`/`syncWorker` (vía `useDriverSession`), nunca de un mock
  * desconectado: mientras haya eventos "pending" muestra el conteo en ámbar;
  * cuando ese conteo cae a cero tras haber tenido pendientes, muestra una
  * confirmación breve en teal con ✓ y luego se oculta sola.
+ *
+ * Vive en el flujo normal de cada pantalla (no como overlay `position:
+ * absolute` superpuesto) — cada pantalla lo renderiza donde le corresponde
+ * en su propio layout, así que nunca tapa nada: empuja el contenido de
+ * abajo en vez de flotar encima. Evita tener que adivinar un offset de
+ * píxeles que despeje headers de alturas distintas entre pantallas.
  */
 export function SyncToast({ theme, pendingCount }: { theme: Theme; pendingCount: number }) {
   const [confirmation, setConfirmation] = useState<number | null>(null);
@@ -54,14 +60,12 @@ export function SyncToast({ theme, pendingCount }: { theme: Theme; pendingCount:
 function createStyles(theme: Theme) {
   return StyleSheet.create({
     toast: {
-      position: "absolute",
-      top: theme.spacing.lg,
-      left: theme.spacing.md,
-      right: theme.spacing.md,
       borderWidth: 1,
       borderRadius: theme.radii.md,
       paddingVertical: theme.spacing.sm,
       paddingHorizontal: theme.spacing.md,
+      marginTop: theme.spacing.sm,
+      marginBottom: theme.spacing.sm,
     },
     text: {
       fontFamily: theme.typography.body,

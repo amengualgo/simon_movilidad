@@ -1,6 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import type { Theme } from "../theme.js";
 import type { DriverSession } from "../hooks/useDriverSession.js";
+import { SyncToast } from "../components/SyncToast.js";
 import { formatDuration } from "../lib/geo.js";
 
 const SEGMENT_COUNT = 6;
@@ -23,7 +25,7 @@ export function SummaryScreen({ theme, session, onBack }: { theme: Theme; sessio
   const maxSegment = Math.max(1, ...segments);
 
   return (
-    <View style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       <View style={styles.header}>
         <Pressable onPress={onBack} hitSlop={12}>
           <Text style={[styles.back, { color: theme.colors.info }]}>← Volver</Text>
@@ -33,6 +35,8 @@ export function SummaryScreen({ theme, session, onBack }: { theme: Theme; sessio
           {new Date(session.nowMs).toLocaleDateString("es-CO", { day: "2-digit", month: "long" })} · {session.route}
         </Text>
       </View>
+
+      <SyncToast theme={theme} pendingCount={session.pendingCount} />
 
       <View style={styles.statsRow}>
         <BigStat theme={theme} label="Tiempo activo" value={formatDuration(summary.durationMs)} />
@@ -77,7 +81,7 @@ export function SummaryScreen({ theme, session, onBack }: { theme: Theme; sessio
           Este resumen es informativo. El reporte oficial lo genera el despachador.
         </Text>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

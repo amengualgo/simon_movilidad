@@ -1,7 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import type { Theme } from "../theme.js";
 import type { DriverSession } from "../hooks/useDriverSession.js";
 import { PulseIndicator } from "../components/PulseIndicator.js";
+import { SyncToast } from "../components/SyncToast.js";
 import { formatDuration } from "../lib/geo.js";
 
 /**
@@ -25,7 +27,7 @@ export function CaptureScreen({
   const clock = new Date(session.nowMs).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
 
   return (
-    <View style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       <View style={styles.topRow}>
         {session.shiftActive ? (
           <View
@@ -49,8 +51,10 @@ export function CaptureScreen({
         </Pressable>
       </View>
 
+      <SyncToast theme={theme} pendingCount={session.pendingCount} />
+
       {session.shiftActive ? <ActiveShift theme={theme} session={session} onRequestEndShift={onRequestEndShift} /> : <InactiveShift theme={theme} session={session} />}
-    </View>
+    </SafeAreaView>
   );
 }
 
