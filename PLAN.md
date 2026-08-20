@@ -110,3 +110,5 @@ Antes de empezar a construir: **confirmar con el reclutador la fecha límite rea
 - Seguir las decisiones de stack ya fijadas en este documento; no reintroducir Kafka, TimescaleDB, Jenkins ni JMeter salvo que se indique explícitamente lo contrario.
 - Cada simplificación de alcance debe generar una línea correspondiente en el README bajo una sección "Decisiones y simplificaciones conscientes".
 - Registrar en un archivo aparte (`ai-audit-notes.md`, borrador de trabajo) cualquier sugerencia del agente que se haya rechazado o refactorizado, con motivo — insumo directo para el punto 3 de entregables.
+
+Fin
