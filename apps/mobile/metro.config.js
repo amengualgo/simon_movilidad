@@ -16,9 +16,19 @@ config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),
   path.resolve(workspaceRoot, "node_modules"),
 ];
-// Evita resolver dos copias distintas de React/React Native al buscar
-// primero en node_modules del workspace raíz cuando falten localmente.
-config.resolver.disableHierarchicalLookup = true;
+// NOTA (corregido tras fallo real en CI, ver tasks/ai-audit-notes.md): NO se
+// deshabilita disableHierarchicalLookup. Esa opción le impide a Metro
+// caminar hacia arriba por el árbol de node_modules buscando un paquete que
+// no esté exactamente en nodeModulesPaths — con React 18 (web) y React 19
+// (mobile) conviviendo en el monorepo, npm a veces anida una copia de un
+// paquete transitivo (ej. "scheduler") en una ruta que disableHierarchicalLookup
+// no cubre, y Metro deja de poder encontrarlo. Falló en una instalación
+// limpia de CI (funcionaba en local por una resolución de node_modules
+// distinta/más vieja) con: "Unable to resolve module scheduler". Se deja el
+// comportamiento por defecto de Metro (walk-up habilitado) y en su lugar se
+// fuerza "scheduler" como dependencia directa de este workspace (ver
+// package.json) para que npm lo hoistee de forma consistente sin importar
+// el conflicto de versiones de React entre workspaces.
 
 // offlineStore.ts/syncWorker.ts (y el resto del código compartido con
 // Vitest) usan imports relativos con extensión ".js" apuntando a archivos
