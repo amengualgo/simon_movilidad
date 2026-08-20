@@ -38,7 +38,7 @@ entorno real serían de solo lectura.
 
 ---
 
-## Caso 4: Strings mágicos duplicados entre archivos — centralizados como constantes tipadas
+## Caso 3: Strings mágicos duplicados entre archivos — centralizados como constantes tipadas
 
 **Contexto:** al revisar el código generado (desde el celular, sin poder correr el proyecto), se detectaron varios discriminadores de tipo repetidos como strings literales sueltos en múltiples archivos: el tipo de mensaje WebSocket (`"telemetry:update"`/`"telemetry:alert"`) en `packages/shared`, `apps/worker` y `apps/web`; el nombre del proveedor de LLM (`"ollama"`/`"openai"`) en `factory.ts` y en cada clase de proveedor; el `role` de los mensajes de chat (`"user"`/`"assistant"`/`"tool"`) en `agent.ts` y `openai-provider.ts`; y el estado de sincronización offline (`"pending"`/`"syncing"`/`"synced"`) en la app móvil.
 
@@ -46,15 +46,10 @@ entorno real serían de solo lectura.
 
 **Corrección aplicada:** se centralizaron todos como constantes `as const` (el equivalente idiomático a un enum en TypeScript, con mejor comportamiento en serialización JSON que un `enum` nativo): `WS_MESSAGE_TYPE` y `ALERT_SEVERITY` en `packages/shared/src/events.ts`, `LLM_PROVIDER_NAME` y `MESSAGE_ROLE` en `apps/ai-agent/src/providers/types.ts`, `SYNC_STATUS` en `apps/mobile/src/offlineStore.ts`, y `CHAT_ROLE` (local, UI-only) en `apps/web/src/components/ChatPanel.tsx`. Todos los usos dispersos se reemplazaron por referencias a estas constantes.
 
-Ejemplo de qué registrar aquí: una sugerencia inicial de usar `try/catch`
-como si fuera el circuit breaker entre la API y el agente de IA (ver skill
-`circuit-breaker-patterns`, que explica por qué no son lo mismo), y cómo se
-forzó el refactor hacia un patrón de estado real (`opossum`) con fallback
-explícito.
 
 ---
 
-## Caso 5: Sistema de diseño único — y su limitación honesta de tooling
+## Caso 4: Sistema de diseño único — y su limitación honesta de tooling
 
 **Contexto:** el usuario pidió explícitamente evitar estilos repetidos y sueltos por pantalla, con un theme claro/oscuro único para dashboard y app móvil.
 
@@ -64,7 +59,7 @@ explícito.
 
 ---
 
-## Caso 6: Auditoría sistemática de manejo de errores — sin catches vacíos ni silencios
+## Caso 5: Auditoría sistemática de manejo de errores — sin catches vacíos ni silencios
 
 **Contexto:** revisión explícita solicitada para descartar errores silenciosos en todo el código generado hasta ese punto.
 
@@ -87,7 +82,7 @@ explícito.
 
 ---
 
-## Caso 7: `npm install --legacy-peer-deps` como parche en vez de arreglar el conflicto real
+## Caso 6: `npm install --legacy-peer-deps` como parche en vez de arreglar el conflicto real
 
 **Contexto:** al inicializar el scaffold de Expo en `apps/mobile` (React 19), el monorepo pasó a tener React 18 (`apps/web`) y React 19 (`apps/mobile`) conviviendo. Al regenerar `package-lock.json`, `npm install` falló con un `ERESOLVE` real: `@vitejs/plugin-react@^4.3.2` (devDependency de `apps/web`) declara un rango de peer `vite` que no incluye `vite@^8.2.1` (ya usado en el repo).
 
@@ -97,7 +92,7 @@ explícito.
 
 ---
 
-## Caso 8: Reescribir código ya probado para esquivar una limitación del bundler, en vez de arreglar el bundler
+## Caso 7: Reescribir código ya probado para esquivar una limitación del bundler, en vez de arreglar el bundler
 
 **Contexto:** al verificar que `apps/mobile` empaqueta con Metro real (`expo export`), el build falló porque `offlineStore.ts`/`syncWorker.ts` usan imports relativos con extensión `.js` apuntando a archivos `.ts` (estilo NodeNext/ESM, ya validado por TypeScript y por Vitest).
 
@@ -107,7 +102,7 @@ explícito.
 
 ---
 
-## Caso 9: Mapa de flota — el propio mockup sugería una imagen estática, se corrigió a un mapa real
+## Caso 8: Mapa de flota — el propio mockup sugería una imagen estática, se corrigió a un mapa real
 
 **Contexto:** el mockup importado (`Mockups Portal Flotas.dc.html`, vía Claude Design) resuelve el mapa del dashboard (DW-01) y el mini-mapa de recorrido del drawer de vehículo (DW-04) con una imagen PNG estática de Bogotá (`assets/map-bogota-wide.png`) y marcadores dibujados en **posiciones de píxel fijas, hardcodeadas a mano** sobre esa imagen — una conveniencia razonable para una herramienta de diseño, pero que no representa coordenadas geográficas reales de ningún vehículo.
 
@@ -117,7 +112,7 @@ explícito.
 
 ---
 
-## Caso 10: Rate limit global sobre toda la API, en vez de aplicado solo donde corresponde
+## Caso 9: Rate limit global sobre toda la API, en vez de aplicado solo donde corresponde
 
 **Contexto:** `apps/api/src/server.ts` registraba `@fastify/rate-limit` de forma global (`{ max: 100, timeWindow: "1 minute" }`), sin `global: false` ni scoping por ruta, cubriendo por igual `/telemetry`, `/telemetry/batch`, `/chat`, `/vehicles/*` y el WebSocket.
 
@@ -127,7 +122,7 @@ explícito.
 
 ---
 
-## Caso 11: Timeout de circuit breaker copiado del ejemplo genérico de la skill, ignorando la advertencia explícita de la skill del agente de IA
+## Caso 10: Timeout de circuit breaker copiado del ejemplo genérico de la skill, ignorando la advertencia explícita de la skill del agente de IA
 
 **Contexto:** `apps/api/src/lib/circuit-breaker.ts` envuelve la llamada `api → ai-agent` con `opossum`, configurado con `timeout: 5000` (y el mismo valor en `AbortSignal.timeout(5000)` del fetch interno) — exactamente el valor del ejemplo de código en `.claude/skills/circuit-breaker-patterns/SKILL.md`, copiado literal.
 
@@ -137,10 +132,22 @@ explícito.
 
 ---
 
-## Caso 12: WatermelonDB ya instalado — se descartó igual por no ser verificable en este entorno
+## Caso 11: WatermelonDB ya instalado — se descartó igual por no ser verificable en este entorno
 
 **Contexto:** al planear el reemplazo del `LocalStore` en memoria de `apps/mobile` (gap ya documentado desde el pase de inicialización de Expo), `@nozbe/watermelondb@^0.25.5` ya figuraba como dependencia instalada en `package.json` — la opción "de menor fricción aparente" era simplemente cablearla, ya que parecía una decisión previa tomada.
 
 **Por qué se evaluó como deficiente para este caso puntual:** WatermelonDB estaba instalado pero completamente sin cablear (sin schema, sin `Model`/`Database`, sin `babel.config.js` para sus decoradores). Su adaptador SQLite típicamente requiere `expo prebuild` + linking nativo para funcionar en un build real — y este entorno de generación no tiene Xcode ni Android SDK para siquiera intentar ese build, mucho menos verificarlo. Cablearla igual habría producido código que "compila" pero termina en el mismo gap ya documentado para otras piezas de `apps/mobile` (código nunca probado contra un dispositivo/emulador real), sin ganar nada a cambio frente a la alternativa.
 
 **Corrección aplicada (confirmada con el usuario antes de implementar, vía `AskUserQuestion`):** se usó `expo-sqlite` en su lugar — módulo oficial de Expo, funciona en managed workflow sin `prebuild`, cero configuración nativa adicional (`npx expo install expo-sqlite` incluso agregó su plugin a `app.json` automáticamente). Se sacó `@nozbe/watermelondb` de `package.json` en vez de dejarlo como dependencia sin uso. Se verificó lo que sí es verificable en este entorno sin dispositivo (`tsc --noEmit`, `vitest` contra un `SqliteDriver` falso inyectado, `expo export --platform android` con 675 módulos bundleados) y se documentó explícitamente, en `apps/mobile/README.md`, qué sigue sin poder probarse sin hardware real (persistencia SQL real entre reinicios, compatibilidad con Expo Go para SDK 57).
+
+---
+
+## Caso 12: `disableHierarchicalLookup: true` en Metro — rompía en CI limpio, funcionaba "por suerte" en local
+
+**Contexto:** el workflow `Mobile CI` de GitHub Actions falló dos veces seguidas con `Unable to resolve module scheduler` durante `expo export --platform android`, pese a que el mismo comando funcionaba sin problema en el entorno local del autor.
+
+**Causa raíz identificada:** `apps/mobile/metro.config.js` tenía `config.resolver.disableHierarchicalLookup = true`, con la intención documentada de evitar que Metro resolviera dos copias distintas de React/React Native. El efecto real de esa opción es más agresivo: le impide a Metro caminar hacia arriba por el árbol de `node_modules` buscando un paquete que no esté exactamente en las rutas listadas en `nodeModulesPaths`. Con React 18 (web) y React 19 (mobile) conviviendo en el mismo monorepo, npm resolvió `scheduler` (dependencia interna de `react-native@0.86.2`, que requiere exactamente `scheduler@0.27.0`) en una ubicación anidada fuera de esas dos rutas permitidas — funcionaba en local por una resolución de `node_modules` distinta (más antigua/con otro orden de instalación), pero una instalación 100% limpia en CI (determinística según el lockfile) expuso el problema real.
+
+**Por qué es un ejemplo relevante de auditoría de IA:** el comentario original junto a la línea sonaba razonable ("evita resolver dos copias de React"), pero no reflejaba el comportamiento real documentado de la opción, y nunca se verificó contra una instalación limpia — solo contra el entorno local ya "contaminado" por instalaciones previas. Es el mismo patrón que otros casos de esta lista: código que parece razonable y hasta compila/corre localmente, pero no sobrevive una verificación real desde cero.
+
+**Corrección aplicada:** se quitó `disableHierarchicalLookup` (Metro vuelve a su comportamiento por defecto, con el walk-up habilitado), y se agregó `scheduler` como dependencia directa de `apps/mobile/package.json`, fijada en `0.27.0` — la versión exacta que `react-native@0.86.2` declara como su propia dependencia (verificado contra el registro de npm, no adivinado), para que quede hoisteada de forma consistente sin importar el conflicto de versiones de React entre workspaces. Pendiente: confirmar en GitHub Actions que el workflow `Mobile CI` queda en verde tras este fix.
